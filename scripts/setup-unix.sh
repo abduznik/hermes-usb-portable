@@ -67,7 +67,7 @@ if [ "$PLATFORM" = "macos" ]; then
     RG_URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-universal-apple-darwin.tar.gz"
 else
     PYTHON_URL="https://github.com/indygreg/python-build-standalone/releases/download/20241016/cpython-3.11.10+20241016-${ARCH_RAW}-unknown-linux-gnu-install_only.tar.gz"
-    NODE_URL="https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-${ARCH_RAW}.tar.xz"
+    NODE_URL="https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-${ARCH}.tar.xz"
     UV_URL="https://github.com/astral-sh/uv/releases/download/0.6.8/uv-${ARCH_RAW}-unknown-linux-gnu.tar.gz"
     RG_URL="https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-${ARCH_RAW}-unknown-linux-musl.tar.gz"
 fi
@@ -209,7 +209,7 @@ if ! download "$UV_URL" "$UV_ARCHIVE"; then
 fi
 rm -rf "$RUNTIME_DIR/uv"
 mkdir -p "$RUNTIME_DIR/uv"
-if tar -xzf "$UV_ARCHIVE" -C "$RUNTIME_DIR/uv"; then
+if tar -xzf "$UV_ARCHIVE" -C "$RUNTIME_DIR/uv" --strip-components=1; then
     chmod +x "$RUNTIME_DIR/uv/uv" 2>/dev/null || true
     done_msg "uv ready"
 else
