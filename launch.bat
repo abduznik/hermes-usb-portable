@@ -178,26 +178,37 @@ echo  %DIM%Version%RESET%  %GRAY%v!HERMES_VERSION!%RESET%
 echo.
 echo %BRIGHT_CYAN%----------------------------------------------------------------%RESET%
 echo.
-echo  %BRIGHT_YELLOW%[1]%RESET%  %WHITE%Start Hermes Chat%RESET%
-echo  %BRIGHT_YELLOW%[2]%RESET%  %WHITE%Setup / Reconfigure Hermes%RESET%
+echo  %BRIGHT_YELLOW%[1]%RESET%  %WHITE%Start Hermes Chat (TUI)%RESET%
+echo  %BRIGHT_YELLOW%[2]%RESET%  %WHITE%Start Web Dashboard (GUI)%RESET%
+echo  %BRIGHT_YELLOW%[3]%RESET%  %WHITE%Setup / Reconfigure Hermes%RESET%
 if "!GATEWAY_STATUS!"=="Running (PID !GATEWAY_PID!)" (
-    echo  %BRIGHT_YELLOW%[3]%RESET%  %WHITE%Stop Gateway%RESET%  %RED%[live]%RESET%
+    echo  %BRIGHT_YELLOW%[4]%RESET%  %WHITE%Stop Gateway%RESET%  %RED%[live]%RESET%
 ) else (
-    echo  %BRIGHT_YELLOW%[3]%RESET%  %WHITE%Start Gateway%RESET%
+    echo  %BRIGHT_YELLOW%[4]%RESET%  %WHITE%Start Gateway%RESET%
 )
-echo  %BRIGHT_YELLOW%[4]%RESET%  %WHITE%Advanced Options%RESET%  %GRAY%--^>%RESET%
-echo  %BRIGHT_YELLOW%[5]%RESET%  %GRAY%Exit%RESET%
+echo  %BRIGHT_YELLOW%[5]%RESET%  %WHITE%Advanced Options%RESET%  %GRAY%--^>%RESET%
+echo  %BRIGHT_YELLOW%[6]%RESET%  %GRAY%Exit%RESET%
 echo.
 echo %BRIGHT_CYAN%----------------------------------------------------------------%RESET%
 echo.
 
-echo %BRIGHT_CYAN%Select option:%RESET% & choice /C 12345 /N
-if errorlevel 5 goto :menu_exit
-if errorlevel 4 goto :show_advanced
-if errorlevel 3 goto :menu_gateway
-if errorlevel 2 goto :menu_setup
+echo %BRIGHT_CYAN%Select option:%RESET% & choice /C 123456 /N
+if errorlevel 6 goto :menu_exit
+if errorlevel 5 goto :show_advanced
+if errorlevel 4 goto :menu_gateway
+if errorlevel 3 goto :menu_setup
+if errorlevel 2 goto :menu_dashboard
 if errorlevel 1 goto :menu_chat
 goto :show_menu
+
+:menu_dashboard
+echo.
+echo %CYAN%Starting premium Web Dashboard...%RESET%
+echo %GRAY%(Vite/React frontend is fully optimized for mobile, tablet, and laptop)%RESET%
+echo.
+hermes dashboard
+goto :show_menu
+
 
 REM ---------------------------------------------------------------------------
 REM Menu Actions

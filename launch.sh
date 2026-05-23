@@ -190,15 +190,16 @@ show_menu() {
     echo ""
     echo -e "${BRIGHT_CYAN}----------------------------------------------------------------${RESET}"
     echo ""
-    echo -e "  ${BRIGHT_YELLOW}[1]${RESET}  ${WHITE}Start Hermes Chat${RESET}"
-    echo -e "  ${BRIGHT_YELLOW}[2]${RESET}  ${WHITE}Setup / Reconfigure Hermes${RESET}"
+    echo -e "  ${BRIGHT_YELLOW}[1]${RESET}  ${WHITE}Start Hermes Chat (TUI)${RESET}"
+    echo -e "  ${BRIGHT_YELLOW}[2]${RESET}  ${WHITE}Start Web Dashboard (GUI)${RESET}"
+    echo -e "  ${BRIGHT_YELLOW}[3]${RESET}  ${WHITE}Setup / Reconfigure Hermes${RESET}"
     if [ "$GATEWAY_STATUS" = "Running (PID $GATEWAY_PID)" ]; then
-        echo -e "  ${BRIGHT_YELLOW}[3]${RESET}  ${WHITE}Stop Gateway${RESET}  ${RED}[live]${RESET}"
+        echo -e "  ${BRIGHT_YELLOW}[4]${RESET}  ${WHITE}Stop Gateway${RESET}  ${RED}[live]${RESET}"
     else
-        echo -e "  ${BRIGHT_YELLOW}[3]${RESET}  ${WHITE}Start Gateway${RESET}"
+        echo -e "  ${BRIGHT_YELLOW}[4]${RESET}  ${WHITE}Start Gateway${RESET}"
     fi
-    echo -e "  ${BRIGHT_YELLOW}[4]${RESET}  ${WHITE}Advanced Options${RESET}  ${GRAY}-->${RESET}"
-    echo -e "  ${BRIGHT_YELLOW}[5]${RESET}  ${GRAY}Exit${RESET}"
+    echo -e "  ${BRIGHT_YELLOW}[5]${RESET}  ${WHITE}Advanced Options${RESET}  ${GRAY}-->${RESET}"
+    echo -e "  ${BRIGHT_YELLOW}[6]${RESET}  ${GRAY}Exit${RESET}"
     echo ""
     echo -e "${BRIGHT_CYAN}----------------------------------------------------------------${RESET}"
     echo ""
@@ -206,10 +207,11 @@ show_menu() {
 
     case "$choice" in
         1) menu_chat ;;
-        2) menu_setup ;;
-        3) menu_gateway ;;
-        4) show_advanced ;;
-        5) menu_exit ;;
+        2) menu_dashboard ;;
+        3) menu_setup ;;
+        4) menu_gateway ;;
+        5) show_advanced ;;
+        6) menu_exit ;;
         *) show_menu ;;
     esac
 }
@@ -217,6 +219,15 @@ show_menu() {
 menu_chat() {
     clear
     hermes
+    show_menu
+}
+
+menu_dashboard() {
+    clear
+    echo -e "${CYAN}Starting premium Web Dashboard...${RESET}"
+    echo -e "${GRAY}(Vite/React frontend is fully optimized for mobile, tablet, and laptop)${RESET}"
+    echo ""
+    hermes dashboard
     show_menu
 }
 
