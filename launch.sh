@@ -218,7 +218,50 @@ show_menu() {
 
 menu_chat() {
     clear
+    if ! check_ollama; then
+        show_menu
+        return
+    fi
+    
+    LLAMAFILE_RUNNING=0
+    LLAMAFILE_EXE="$HERMES_HOME/bin/llamafile"
+    LOCAL_SERVE=0
+    
+    if [ -f "$HERMES_HOME/config.yaml" ]; then
+        if grep -q "provider: custom" "$HERMES_HOME/config.yaml" 2>/dev/null; then
+            if grep -q "base_url: http://127.0.0.1:8080" "$HERMES_HOME/config.yaml" 2>/dev/null; then
+                if [ -f "$LLAMAFILE_EXE" ]; then
+                    LOCAL_SERVE=1
+                fi
+            fi
+        fi
+    fi
+    
+    if [ "$LOCAL_SERVE" -eq 1 ]; then
+        MODEL_PATH=""
+        for f in "$HERMES_HOME"/models/*.gguf; do
+            if [ -z "$MODEL_PATH" ] && [ -f "$f" ]; then
+                MODEL_PATH="$f"
+            fi
+        done
+        if [ -n "$MODEL_PATH" ]; then
+            echo -e "${CYAN}Starting local llamafile server with model: $MODEL_PATH${RESET}"
+            chmod +x "$LLAMAFILE_EXE" 2>/dev/null || true
+            "$LLAMAFILE_EXE" --server --host 127.0.0.1 --port 8080 --model "$MODEL_PATH" --nobrowser >/dev/null 2>&1 &
+            LLAMAFILE_PID=$!
+            LLAMAFILE_RUNNING=1
+            sleep 3
+        else
+            echo -e "${YELLOW}[WARN] Llamafile executable found, but no .gguf models found in data/models/${RESET}"
+        fi
+    fi
+    
     hermes
+    
+    if [ "$LLAMAFILE_RUNNING" -eq 1 ]; then
+        echo -e "${CYAN}Stopping local llamafile server ...${RESET}"
+        kill -9 "$LLAMAFILE_PID" 2>/dev/null || true
+    fi
     show_menu
 }
 
@@ -227,13 +270,148 @@ menu_dashboard() {
     echo -e "${CYAN}Starting premium Web Dashboard...${RESET}"
     echo -e "${GRAY}(Vite/React frontend is fully optimized for mobile, tablet, and laptop)${RESET}"
     echo ""
+    if ! check_ollama; then
+        show_menu
+        return
+    fi
     hermes dashboard
     show_menu
 }
 
+check_ollama() {
+    OLLAMA_OFFLINE=0
+    if [ -f "$HERMES_HOME/config.yaml" ]; then
+        if grep -q "base_url: http://127.0.0.1:11434" "$HERMES_HOME/config.yaml" 2>/dev/null; then
+            echo "Checking if local Ollama server is running on port 11434..."
+            if ! nc -z 127.0.0.1 11434 2>/dev/null && ! curl -s http://127.0.0.1:11434 >/dev/null; then
+                OLLAMA_OFFLINE=1
+            fi
+        fi
+    fi
+    if [ "$OLLAMA_OFFLINE" -eq 1 ]; then
+        echo -e "${YELLOW}[WARN] Local Ollama server is not running on port 11434!${RESET}"
+        echo "Please make sure Ollama is started on the host system,"
+        echo "and that you have pulled the model by running:"
+        echo "  ollama pull qwen2.5-coder:1.5b"
+        echo ""
+        read -p "$(echo -e "${BRIGHT_YELLOW}Do you want to continue anyway? [y/N]: ${RESET}")" yn
+        case "$yn" in
+            [Yy]* ) return 0 ;;
+            * ) return 1 ;;
+        esac
+    fi
+    return 0
+}
+
 menu_setup() {
     clear
+    echo -e "${BRIGHT_CYAN}----------------------------------------------------------------${RESET}"
+    echo -e "${BOLD}${BRIGHT_WHITE}                  Hermes Setup Configuration${RESET}"
+    echo -e "${BRIGHT_CYAN}----------------------------------------------------------------${RESET}"
+    echo " Choose how you want to run Hermes:"
+    echo ""
+    echo -e "  ${BRIGHT_YELLOW}[1]${RESET}  ${WHITE}Local Ollama Server (Recommended - GPU Accelerated)${RESET}"
+    echo -e "  ${BRIGHT_YELLOW}[2]${RESET}  ${WHITE}Local USB Model (Offline - CPU served from USB)${RESET}"
+    echo -e "  ${BRIGHT_YELLOW}[3]${RESET}  ${WHITE}Online Providers (Cloud APIs: OpenRouter, DeepSeek, etc.)${RESET}"
+    echo -e "  ${BRIGHT_YELLOW}[4]${RESET}  ${GRAY}Back to Main Menu${RESET}"
+    echo -e "${BRIGHT_CYAN}----------------------------------------------------------------${RESET}"
+    echo ""
+    read -p "$(echo -e "${BRIGHT_CYAN}Select option: ${RESET}")" choice
+    
+    case "$choice" in
+        1) setup_ollama_local ;;
+        2) setup_usb_local ;;
+        3) setup_online ;;
+        4) show_menu ;;
+        *) menu_setup ;;
+    esac
+}
+
+setup_online() {
+    clear
     hermes setup
+    detect_status
+    show_menu
+}
+
+setup_ollama_local() {
+    clear
+    echo -e "${CYAN}Configuring Hermes to use local Ollama server...${RESET}"
+    hermes config set model.provider custom
+    hermes config set model.base_url http://127.0.0.1:11434/v1
+    hermes config set model.default qwen2.5-coder:1.5b
+    echo -e "${BRIGHT_GREEN}✓ Configuration updated to use local Ollama with Qwen2.5-Coder!${RESET}"
+    echo ""
+    echo "Checking if local Ollama server is running on port 11434..."
+    if ! nc -z 127.0.0.1 11434 2>/dev/null && ! curl -s http://127.0.0.1:11434 >/dev/null; then
+        echo -e "${YELLOW}[WARN] Local Ollama server is not running on port 11434.${RESET}"
+        echo "Please make sure Ollama is installed and running on the host system,"
+        echo "and that you have pulled the model by running:"
+        echo "  ollama pull qwen2.5-coder:1.5b"
+    else
+        echo -e "${BRIGHT_GREEN}✓ Local Ollama server detected!${RESET}"
+    fi
+    read -p "Press Enter to continue ..."
+    detect_status
+    show_menu
+}
+
+setup_usb_local() {
+    clear
+    LLAMAFILE_EXE="$HERMES_HOME/bin/llamafile"
+    MODEL_FILE="$HERMES_HOME/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+    DOWNLOAD_REQUIRED=0
+    
+    if [ ! -f "$LLAMAFILE_EXE" ]; then DOWNLOAD_REQUIRED=1; fi
+    if [ ! -f "$MODEL_FILE" ]; then DOWNLOAD_REQUIRED=1; fi
+    
+    if [ "$DOWNLOAD_REQUIRED" -eq 1 ]; then
+        echo -e "${YELLOW}[INFO] Local model assets are missing from the USB drive.${RESET}"
+        echo "This setup requires downloading:"
+        echo "  - Llamafile runner (~35 MB)"
+        echo "  - Qwen2.5-Coder-1.5B model (~1.0 GB)"
+        echo ""
+        read -p "$(echo -e "${BRIGHT_YELLOW}Do you want to download these files now? [y/N]: ${RESET}")" yn
+        case "$yn" in
+            [Yy]* ) ;;
+            * )
+                echo "Setup cancelled. Returning to setup menu."
+                read -p "Press Enter to continue ..."
+                menu_setup
+                return
+                ;;
+        esac
+        
+        echo ""
+        echo -e "${CYAN}Downloading local AI assets to USB drive...${RESET}"
+        echo "Please keep this terminal open."
+        echo ""
+        mkdir -p "$HERMES_HOME/bin" "$HERMES_HOME/models"
+        
+        echo "Downloading llamafile ..."
+        curl -L -o "$LLAMAFILE_EXE" "https://github.com/mozilla-ai/llamafile/releases/download/0.10.1/llamafile-0.10.1"
+        chmod +x "$LLAMAFILE_EXE"
+        
+        echo "Downloading Qwen2.5-Coder-1.5B ..."
+        curl -L -o "$MODEL_FILE" "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+        
+        if [ $? -ne 0 ]; then
+            echo ""
+            echo -e "${RED}[ERROR] Download failed. Please check your internet connection.${RESET}"
+            read -p "Press Enter to continue ..."
+            menu_setup
+            return
+        fi
+        echo -e "${BRIGHT_GREEN}✓ Download completed successfully!${RESET}"
+    fi
+    
+    echo ""
+    echo -e "${CYAN}Configuring Hermes to use local USB model...${RESET}"
+    hermes config set model.provider custom
+    hermes config set model.base_url http://127.0.0.1:8080/v1
+    hermes config set model.default qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+    echo -e "${BRIGHT_GREEN}✓ Configuration updated!${RESET}"
+    read -p "Press Enter to continue ..."
     detect_status
     show_menu
 }

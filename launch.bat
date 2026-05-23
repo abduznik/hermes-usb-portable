@@ -206,6 +206,8 @@ echo.
 echo %CYAN%Starting premium Web Dashboard...%RESET%
 echo %GRAY%(Vite/React frontend is fully optimized for mobile, tablet, and laptop)%RESET%
 echo.
+call :check_ollama
+if errorlevel 1 goto :show_menu
 hermes dashboard
 goto :show_menu
 
@@ -215,12 +217,169 @@ REM Menu Actions
 REM ---------------------------------------------------------------------------
 :menu_chat
 echo.
+call :check_ollama
+if errorlevel 1 goto :show_menu
+
+set "LLAMAFILE_RUNNING=0"
+set "LLAMAFILE_EXE=%HERMES_HOME%\bin\llamafile.exe"
+set "LOCAL_SERVE=0"
+
+if exist "%HERMES_HOME%\config.yaml" (
+    findstr /C:"provider: custom" "%HERMES_HOME%\config.yaml" >nul 2>&1
+    if not errorlevel 1 (
+        findstr /C:"base_url: http://127.0.0.1:8080" "%HERMES_HOME%\config.yaml" >nul 2>&1
+        if not errorlevel 1 (
+            if exist "!LLAMAFILE_EXE!" (
+                set "LOCAL_SERVE=1"
+            )
+        )
+    )
+)
+
+if "!LOCAL_SERVE!"=="1" (
+    set "MODEL_PATH="
+    for %%f in ("%HERMES_HOME%\models\*.gguf") do (
+        if not defined MODEL_PATH set "MODEL_PATH=%%f"
+    )
+    if defined MODEL_PATH (
+        echo %CYAN%Starting local llamafile server with model: !MODEL_PATH!%RESET%
+        start /B "llamafile" "!LLAMAFILE_EXE!" --server --host 127.0.0.1 --port 8080 --model "!MODEL_PATH!" --nobrowser >nul 2>&1
+        set "LLAMAFILE_RUNNING=1"
+        timeout /t 3 /nobreak >nul
+    ) else (
+        echo %YELLOW%[WARN] Llamafile executable found, but no .gguf models found in data\models\%RESET%
+    )
+)
+
 hermes
+
+if "!LLAMAFILE_RUNNING!"=="1" (
+    echo %CYAN%Stopping local llamafile server ...%RESET%
+    taskkill /f /fi "IMAGENAME eq llamafile.exe" >nul 2>&1
+)
 goto :show_menu
+
+:check_ollama
+set "OLLAMA_OFFLINE=0"
+if exist "%HERMES_HOME%\config.yaml" (
+    findstr /C:"base_url: http://127.0.0.1:11434" "%HERMES_HOME%\config.yaml" >nul 2>&1
+    if not errorlevel 1 (
+        echo Checking if local Ollama server is running on port 11434...
+        powershell -Command "try { $t = New-Object System.Net.Sockets.TcpClient('127.0.0.1', 11434); if ($t.Connected) { exit 0 } } catch { exit 1 }" >nul 2>&1
+        if errorlevel 1 (
+            set "OLLAMA_OFFLINE=1"
+        )
+    )
+)
+if "!OLLAMA_OFFLINE!"=="1" (
+    echo %YELLOW%[WARN] Local Ollama server is not running on port 11434!%RESET%
+    echo Please make sure Ollama is started on the host system,
+    echo and that you have pulled the model by running:
+    echo   ollama pull qwen2.5-coder:1.5b
+    echo.
+    echo %BRIGHT_YELLOW%Do you want to continue anyway? [Y, N]%RESET% & choice /C YN /N
+    if errorlevel 2 (
+        exit /b 1
+    )
+)
+exit /b 0
 
 :menu_setup
 echo.
+echo %BRIGHT_CYAN%----------------------------------------------------------------%RESET%
+echo %BOLD%%BRIGHT_WHITE%                  Hermes Setup Configuration%RESET%
+echo %BRIGHT_CYAN%----------------------------------------------------------------%RESET%
+echo  Choose how you want to run Hermes:
+echo.
+echo  %BRIGHT_YELLOW%[1]%RESET%  %WHITE%Local Ollama Server (Recommended - GPU Accelerated)%RESET%
+echo  %BRIGHT_YELLOW%[2]%RESET%  %WHITE%Local USB Model (Offline - CPU served from USB)%RESET%
+echo  %BRIGHT_YELLOW%[3]%RESET%  %WHITE%Online Providers (Cloud APIs: OpenRouter, DeepSeek, etc.)%RESET%
+echo  %BRIGHT_YELLOW%[4]%RESET%  %GRAY%Back to Main Menu%RESET%
+echo %BRIGHT_CYAN%----------------------------------------------------------------%RESET%
+echo.
+echo %BRIGHT_CYAN%Select option:%RESET% & choice /C 1234 /N
+if errorlevel 4 goto :show_menu
+if errorlevel 3 goto :setup_online
+if errorlevel 2 goto :setup_usb_local
+if errorlevel 1 goto :setup_ollama_local
+goto :menu_setup
+
+:setup_online
+echo.
 hermes setup
+goto :detect_status
+
+:setup_ollama_local
+echo.
+echo %CYAN%Configuring Hermes to use local Ollama server...%RESET%
+hermes config set model.provider custom
+hermes config set model.base_url http://127.0.0.1:11434/v1
+hermes config set model.default qwen2.5-coder:1.5b
+echo %GREEN%✓ Configuration updated to use local Ollama with Qwen2.5-Coder!%RESET%
+echo.
+echo Checking if local Ollama server is running on port 11434...
+powershell -Command "try { $t = New-Object System.Net.Sockets.TcpClient('127.0.0.1', 11434); if ($t.Connected) { exit 0 } } catch { exit 1 }"
+if errorlevel 1 (
+    echo %YELLOW%[WARN] Local Ollama server is not running on port 11434.%RESET%
+    echo Please make sure Ollama is installed and running on the host system,
+    echo and that you have pulled the model by running:
+    echo   ollama pull qwen2.5-coder:1.5b
+) else (
+    echo %GREEN%✓ Local Ollama server detected!%RESET%
+)
+pause
+goto :detect_status
+
+:setup_usb_local
+echo.
+set "LLAMAFILE_EXE=%HERMES_HOME%\bin\llamafile.exe"
+set "MODEL_FILE=%HERMES_HOME%\models\qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
+set "DOWNLOAD_REQUIRED=0"
+
+if not exist "!LLAMAFILE_EXE!" set "DOWNLOAD_REQUIRED=1"
+if not exist "!MODEL_FILE!" set "DOWNLOAD_REQUIRED=1"
+
+if "!DOWNLOAD_REQUIRED!"=="1" (
+    echo %YELLOW%[INFO] Local model assets are missing from the USB drive.%RESET%
+    echo This setup requires downloading:
+    echo  - Llamafile runner (~35 MB)
+    echo  - Qwen2.5-Coder-1.5B model (~1.0 GB)
+    echo.
+    echo %BRIGHT_YELLOW%Do you want to download these files now? [Y, N]%RESET% & choice /C YN /N
+    if errorlevel 2 (
+        echo Setup cancelled. Returning to setup menu.
+        pause
+        goto :menu_setup
+    )
+    
+    echo.
+    echo %CYAN%Downloading local AI assets to USB drive...%RESET%
+    echo Please keep this terminal open.
+    echo.
+    powershell -ExecutionPolicy Bypass -Command ^
+        "Write-Host 'Downloading llamafile-0.10.1 ...'; ^
+         if (-not (Test-Path '%HERMES_HOME%\bin')) { New-Item -ItemType Directory -Force -Path '%HERMES_HOME%\bin' }; ^
+         Invoke-WebRequest -Uri 'https://github.com/mozilla-ai/llamafile/releases/download/0.10.1/llamafile-0.10.1' -OutFile '!LLAMAFILE_EXE!'; ^
+         Write-Host 'Downloading Qwen2.5-Coder-1.5B-Instruct-Q4_K_M GGUF ...'; ^
+         if (-not (Test-Path '%HERMES_HOME%\models')) { New-Item -ItemType Directory -Force -Path '%HERMES_HOME%\models' }; ^
+         Invoke-WebRequest -Uri 'https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf' -OutFile '!MODEL_FILE!';"
+         
+    if errorlevel 1 (
+        echo.
+        echo %RED%[ERROR] Download failed. Please check your internet connection.%RESET%
+        pause
+        goto :menu_setup
+    )
+    echo %GREEN%✓ Download completed successfully!%RESET%
+)
+
+echo.
+echo %CYAN%Configuring Hermes to use local USB model...%RESET%
+hermes config set model.provider custom
+hermes config set model.base_url http://127.0.0.1:8080/v1
+hermes config set model.default qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+echo %GREEN%✓ Configuration updated!%RESET%
+pause
 goto :detect_status
 
 :menu_gateway
