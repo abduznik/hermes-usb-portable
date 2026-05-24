@@ -336,21 +336,103 @@ setup_online() {
 
 setup_ollama_local() {
     clear
-    echo -e "${CYAN}Configuring Hermes to use local Ollama server...${RESET}"
-    hermes config set model.provider custom
-    hermes config set model.base_url http://127.0.0.1:11434/v1
-    hermes config set model.default qwen2.5-coder:1.5b
-    echo -e "${BRIGHT_GREEN}✓ Configuration updated to use local Ollama with Qwen2.5-Coder!${RESET}"
-    echo ""
     echo "Checking if local Ollama server is running on port 11434..."
     if ! nc -z 127.0.0.1 11434 2>/dev/null && ! curl -s http://127.0.0.1:11434 >/dev/null; then
-        echo -e "${YELLOW}[WARN] Local Ollama server is not running on port 11434.${RESET}"
-        echo "Please make sure Ollama is installed and running on the host system,"
-        echo "and that you have pulled the model by running:"
-        echo "  ollama pull qwen2.5-coder:1.5b"
+        echo -e "${YELLOW}Ollama is not running. Attempting to start local Ollama server...${RESET}"
+        if [ "$PLATFORM" = "macos" ]; then
+            echo "Starting Ollama macOS App..."
+            open -a Ollama 2>/dev/null || ollama serve >/dev/null 2>&1 &
+        else
+            # Linux
+            echo "Starting Ollama service..."
+            if systemctl --user is-failed ollama >/dev/null 2>&1 || systemctl --user is-active ollama >/dev/null 2>&1; then
+                systemctl --user start ollama >/dev/null 2>&1 || ollama serve >/dev/null 2>&1 &
+            elif systemctl is-failed ollama >/dev/null 2>&1 || systemctl is-active ollama >/dev/null 2>&1; then
+                sudo systemctl start ollama >/dev/null 2>&1 || ollama serve >/dev/null 2>&1 &
+            else
+                ollama serve >/dev/null 2>&1 &
+            fi
+        fi
+        echo "Waiting 5 seconds for server startup..."
+        sleep 5
+        
+        if ! nc -z 127.0.0.1 11434 2>/dev/null && ! curl -s http://127.0.0.1:11434 >/dev/null; then
+            echo ""
+            echo -e "${RED}[ERROR] Could not start or connect to Ollama server. Please verify it is installed and running.${RESET}"
+            read -p "Press Enter to continue ..."
+            menu_setup
+            return
+        else
+            echo -e "${BRIGHT_GREEN}✓ Ollama server successfully started!${RESET}"
+        fi
     else
-        echo -e "${BRIGHT_GREEN}✓ Local Ollama server detected!${RESET}"
+        echo -e "${BRIGHT_GREEN}✓ Local Ollama server is already running!${RESET}"
     fi
+
+    RECS=$(python3 "$PORTABLE_ROOT/scripts/detect_system.py" --recommend-tags 2>/dev/null || python "$PORTABLE_ROOT/scripts/detect_system.py" --recommend-tags 2>/dev/null || echo "")
+
+    M1_LABEL="Qwen 2.5 Coder 1.5B   (qwen2.5-coder:1.5b)"
+    M2_LABEL="Qwen 2.5 Coder 7B      (qwen2.5-coder:7b)"
+    M3_LABEL="Gemma 4 E2B             (gemma4:e2b)"
+    M4_LABEL="Gemma 4 E4B             (gemma4:e4b)"
+    M5_LABEL="DeepSeek-Coder 1.3B     (deepseek-coder:1.3b)"
+    M6_LABEL="DeepSeek-Coder 6.7B     (deepseek-coder:6.7b)"
+
+    if echo "$RECS" | grep -q "qwen2.5-coder:1.5b"; then M1_LABEL="${M1_LABEL} ${BRIGHT_GREEN}(Recommended)${RESET}"; fi
+    if echo "$RECS" | grep -q "qwen2.5-coder:7b"; then M2_LABEL="${M2_LABEL} ${BRIGHT_GREEN}(Recommended)${RESET}"; fi
+    if echo "$RECS" | grep -q "gemma4:e2b"; then M3_LABEL="${M3_LABEL} ${BRIGHT_GREEN}(Recommended)${RESET}"; fi
+    if echo "$RECS" | grep -q "gemma4:e4b"; then M4_LABEL="${M4_LABEL} ${BRIGHT_GREEN}(Recommended)${RESET}"; fi
+    if echo "$RECS" | grep -q "deepseek-coder:1.3b"; then M5_LABEL="${M5_LABEL} ${BRIGHT_GREEN}(Recommended)${RESET}"; fi
+    if echo "$RECS" | grep -q "deepseek-coder:6.7b"; then M6_LABEL="${M6_LABEL} ${BRIGHT_GREEN}(Recommended)${RESET}"; fi
+
+    while true; do
+        clear
+        echo -e "${BRIGHT_CYAN}----------------------------------------------------------------${RESET}"
+        echo -e "${BOLD}${BRIGHT_WHITE}                  Select Local Ollama Model${RESET}"
+        echo -e "${BRIGHT_CYAN}----------------------------------------------------------------${RESET}"
+        echo " Select the model you wish to use. Recommended models are highlighted."
+        echo ""
+        echo -e "  ${BRIGHT_YELLOW}[1]${RESET}  $M1_LABEL"
+        echo -e "  ${BRIGHT_YELLOW}[2]${RESET}  $M2_LABEL"
+        echo -e "  ${BRIGHT_YELLOW}[3]${RESET}  $M3_LABEL"
+        echo -e "  ${BRIGHT_YELLOW}[4]${RESET}  $M4_LABEL"
+        echo -e "  ${BRIGHT_YELLOW}[5]${RESET}  $M5_LABEL"
+        echo -e "  ${BRIGHT_YELLOW}[6]${RESET}  $M6_LABEL"
+        echo -e "  ${BRIGHT_YELLOW}[7]${RESET}  ${GRAY}Cancel setup (Back to menu)${RESET}"
+        echo -e "${BRIGHT_CYAN}----------------------------------------------------------------${RESET}"
+        echo ""
+        read -p "$(echo -e "${BRIGHT_CYAN}Select option: ${RESET}")" choice
+        
+        case "$choice" in
+            1) MODEL_TAG="qwen2.5-coder:1.5b"; break ;;
+            2) MODEL_TAG="qwen2.5-coder:7b"; break ;;
+            3) MODEL_TAG="gemma4:e2b"; break ;;
+            4) MODEL_TAG="gemma4:e4b"; break ;;
+            5) MODEL_TAG="deepseek-coder:1.3b"; break ;;
+            6) MODEL_TAG="deepseek-coder:6.7b"; break ;;
+            7) menu_setup; return ;;
+            *) ;;
+        esac
+    done
+
+    echo ""
+    echo -e "${CYAN}Pulling local model: $MODEL_TAG...${RESET}"
+    echo "Running: ollama pull $MODEL_TAG"
+    ollama pull "$MODEL_TAG"
+    if [ $? -ne 0 ]; then
+        echo ""
+        echo -e "${RED}[ERROR] Failed to pull model '$MODEL_TAG'. Please check internet connection.${RESET}"
+        read -p "Press Enter to continue ..."
+        menu_setup
+        return
+    fi
+    echo -e "${BRIGHT_GREEN}✓ Model successfully pulled!${RESET}"
+    echo ""
+    echo -e "${CYAN}Configuring Hermes to use local Ollama model \"$MODEL_TAG\"...${RESET}"
+    hermes config set model.provider custom
+    hermes config set model.base_url http://127.0.0.1:11434/v1
+    hermes config set model.default "$MODEL_TAG"
+    echo -e "${BRIGHT_GREEN}✓ Configuration updated successfully!${RESET}"
     read -p "Press Enter to continue ..."
     detect_status
     show_menu

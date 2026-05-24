@@ -311,22 +311,106 @@ goto :detect_status
 
 :setup_ollama_local
 echo.
-echo %CYAN%Configuring Hermes to use local Ollama server...%RESET%
+echo Checking if local Ollama server is running on port 11434...
+powershell -Command "try { $t = New-Object System.Net.Sockets.TcpClient('127.0.0.1', 11434); if ($t.Connected) { exit 0 } } catch { exit 1 }" >nul 2>&1
+if errorlevel 1 (
+    echo %YELLOW%Ollama is not running. Attempting to start local Ollama server...%RESET%
+    if exist "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe" (
+        echo Starting Ollama application...
+        start "" "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe"
+    ) else (
+        echo Ollama app not found in LocalAppData. Starting via CLI serve...
+        start /B "ollama-serve" ollama serve >nul 2>&1
+    )
+    echo Waiting 5 seconds for server startup...
+    timeout /t 5 /nobreak >nul
+    
+    powershell -Command "try { $t = New-Object System.Net.Sockets.TcpClient('127.0.0.1', 11434); if ($t.Connected) { exit 0 } } catch { exit 1 }" >nul 2>&1
+    if errorlevel 1 (
+        echo.
+        echo %RED%[ERROR] Could not start or connect to Ollama server. Please verify it is installed and running.%RESET%
+        pause
+        goto :menu_setup
+    ) else (
+        echo %GREEN%✓ Ollama server successfully started!%RESET%
+    )
+) else (
+    echo %GREEN%✓ Local Ollama server is already running!%RESET%
+)
+
+set "RECS="
+for /f "delims=" %%i in ('python scripts/detect_system.py --recommend-tags') do set "RECS=%%i"
+
+set "M1_LABEL=Qwen 2.5 Coder 1.5B   (qwen2.5-coder:1.5b)"
+set "M2_LABEL=Qwen 2.5 Coder 7B      (qwen2.5-coder:7b)"
+set "M3_LABEL=Gemma 4 E2B             (gemma4:e2b)"
+set "M4_LABEL=Gemma 4 E4B             (gemma4:e4b)"
+set "M5_LABEL=DeepSeek-Coder 1.3B     (deepseek-coder:1.3b)"
+set "M6_LABEL=DeepSeek-Coder 6.7B     (deepseek-coder:6.7b)"
+
+echo !RECS! | findstr /C:"qwen2.5-coder:1.5b" >nul 2>&1
+if not errorlevel 1 set "M1_LABEL=!M1_LABEL! %GREEN%(Recommended)%RESET%"
+
+echo !RECS! | findstr /C:"qwen2.5-coder:7b" >nul 2>&1
+if not errorlevel 1 set "M2_LABEL=!M2_LABEL! %GREEN%(Recommended)%RESET%"
+
+echo !RECS! | findstr /C:"gemma4:e2b" >nul 2>&1
+if not errorlevel 1 set "M3_LABEL=!M3_LABEL! %GREEN%(Recommended)%RESET%"
+
+echo !RECS! | findstr /C:"gemma4:e4b" >nul 2>&1
+if not errorlevel 1 set "M4_LABEL=!M4_LABEL! %GREEN%(Recommended)%RESET%"
+
+echo !RECS! | findstr /C:"deepseek-coder:1.3b" >nul 2>&1
+if not errorlevel 1 set "M5_LABEL=!M5_LABEL! %GREEN%(Recommended)%RESET%"
+
+echo !RECS! | findstr /C:"deepseek-coder:6.7b" >nul 2>&1
+if not errorlevel 1 set "M6_LABEL=!M6_LABEL! %GREEN%(Recommended)%RESET%"
+
+:menu_select_model
+echo.
+echo %BRIGHT_CYAN%----------------------------------------------------------------%RESET%
+echo %BOLD%%BRIGHT_WHITE%                  Select Local Ollama Model%RESET%
+echo %BRIGHT_CYAN%----------------------------------------------------------------%RESET%
+echo  Select the model you wish to use. Recommended models are highlighted.
+echo.
+echo  %BRIGHT_YELLOW%[1]%RESET%  !M1_LABEL!
+echo  %BRIGHT_YELLOW%[2]%RESET%  !M2_LABEL!
+echo  %BRIGHT_YELLOW%[3]%RESET%  !M3_LABEL!
+echo  %BRIGHT_YELLOW%[4]%RESET%  !M4_LABEL!
+echo  %BRIGHT_YELLOW%[5]%RESET%  !M5_LABEL!
+echo  %BRIGHT_YELLOW%[6]%RESET%  !M6_LABEL!
+echo  %BRIGHT_YELLOW%[7]%RESET%  %GRAY%Cancel setup (Back to menu)%RESET%
+echo %BRIGHT_CYAN%----------------------------------------------------------------%RESET%
+echo.
+echo %BRIGHT_CYAN%Select option:%RESET% & choice /C 1234567 /N
+
+if errorlevel 7 goto :menu_setup
+if errorlevel 6 set "MODEL_TAG=deepseek-coder:6.7b" & goto :pull_and_configure
+if errorlevel 5 set "MODEL_TAG=deepseek-coder:1.3b" & goto :pull_and_configure
+if errorlevel 4 set "MODEL_TAG=gemma4:e4b"          & goto :pull_and_configure
+if errorlevel 3 set "MODEL_TAG=gemma4:e2b"          & goto :pull_and_configure
+if errorlevel 2 set "MODEL_TAG=qwen2.5-coder:7b"     & goto :pull_and_configure
+if errorlevel 1 set "MODEL_TAG=qwen2.5-coder:1.5b"   & goto :pull_and_configure
+goto :menu_select_model
+
+:pull_and_configure
+echo.
+echo %CYAN%Pulling local model: !MODEL_TAG!...%RESET%
+echo Running: ollama pull !MODEL_TAG!
+ollama pull !MODEL_TAG!
+if errorlevel 1 (
+    echo.
+    echo %RED%[ERROR] Failed to pull model '!MODEL_TAG!'. Please check internet connection.%RESET%
+    pause
+    goto :menu_select_model
+)
+echo %GREEN%✓ Model successfully pulled!%RESET%
+echo.
+echo %CYAN%Configuring Hermes to use local Ollama model "!MODEL_TAG!"...%RESET%
 hermes config set model.provider custom
 hermes config set model.base_url http://127.0.0.1:11434/v1
-hermes config set model.default qwen2.5-coder:1.5b
-echo %GREEN%✓ Configuration updated to use local Ollama with Qwen2.5-Coder!%RESET%
-echo.
-echo Checking if local Ollama server is running on port 11434...
-powershell -Command "try { $t = New-Object System.Net.Sockets.TcpClient('127.0.0.1', 11434); if ($t.Connected) { exit 0 } } catch { exit 1 }"
-if errorlevel 1 (
-    echo %YELLOW%[WARN] Local Ollama server is not running on port 11434.%RESET%
-    echo Please make sure Ollama is installed and running on the host system,
-    echo and that you have pulled the model by running:
-    echo   ollama pull qwen2.5-coder:1.5b
-) else (
-    echo %GREEN%✓ Local Ollama server detected!%RESET%
-)
+hermes config set model.default !MODEL_TAG!
+echo %GREEN%✓ Configuration updated successfully!%RESET%
 pause
 goto :detect_status
 
