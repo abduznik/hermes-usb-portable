@@ -311,6 +311,24 @@ goto :detect_status
 
 :setup_ollama_local
 echo.
+set "OLLAMA_EXE=ollama"
+if exist "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" (
+    set "OLLAMA_EXE=%LOCALAPPDATA%\Programs\Ollama\ollama.exe"
+)
+
+where.exe !OLLAMA_EXE! >nul 2>&1
+if errorlevel 1 (
+    if not exist "!OLLAMA_EXE!" (
+        echo.
+        echo %RED%[ERROR] Ollama CLI executable was not found on your system!%RESET%
+        echo Please download and install Ollama from: https://ollama.com
+        echo or make sure it is added to your environment PATH.
+        echo.
+        pause
+        goto :menu_setup
+    )
+)
+
 echo Checking if local Ollama server is running on port 11434...
 powershell -Command "try { $t = New-Object System.Net.Sockets.TcpClient('127.0.0.1', 11434); if ($t.Connected) { exit 0 } } catch { exit 1 }" >nul 2>&1
 if errorlevel 1 (
@@ -320,7 +338,7 @@ if errorlevel 1 (
         start "" "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe"
     ) else (
         echo Ollama app not found in LocalAppData. Starting via CLI serve...
-        start /B "ollama-serve" ollama serve >nul 2>&1
+        start /B "ollama-serve" "!OLLAMA_EXE!" serve >nul 2>&1
     )
     echo Waiting 5 seconds for server startup...
     timeout /t 5 /nobreak >nul
@@ -396,8 +414,8 @@ goto :menu_select_model
 :pull_and_configure
 echo.
 echo %CYAN%Pulling local model: !MODEL_TAG!...%RESET%
-echo Running: ollama pull !MODEL_TAG!
-ollama pull !MODEL_TAG!
+echo Running: "!OLLAMA_EXE!" pull !MODEL_TAG!
+"!OLLAMA_EXE!" pull !MODEL_TAG!
 if errorlevel 1 (
     echo.
     echo %RED%[ERROR] Failed to pull model '!MODEL_TAG!'. Please check internet connection.%RESET%

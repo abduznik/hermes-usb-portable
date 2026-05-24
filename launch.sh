@@ -336,21 +336,41 @@ setup_online() {
 
 setup_ollama_local() {
     clear
+    OLLAMA_EXE="ollama"
+    if [ "$PLATFORM" = "macos" ]; then
+        if [ -f "/usr/local/bin/ollama" ]; then
+            OLLAMA_EXE="/usr/local/bin/ollama"
+        elif [ -f "/Applications/Ollama.app/Contents/Resources/ollama" ]; then
+            OLLAMA_EXE="/Applications/Ollama.app/Contents/Resources/ollama"
+        fi
+    fi
+
+    if ! command -v "$OLLAMA_EXE" >/dev/null 2>&1; then
+        echo ""
+        echo -e "${RED}[ERROR] Ollama CLI executable was not found on your system!${RESET}"
+        echo "Please download and install Ollama from: https://ollama.com"
+        echo "or make sure it is added to your environment PATH."
+        echo ""
+        read -p "Press Enter to continue ..."
+        menu_setup
+        return
+    fi
+
     echo "Checking if local Ollama server is running on port 11434..."
     if ! nc -z 127.0.0.1 11434 2>/dev/null && ! curl -s http://127.0.0.1:11434 >/dev/null; then
         echo -e "${YELLOW}Ollama is not running. Attempting to start local Ollama server...${RESET}"
         if [ "$PLATFORM" = "macos" ]; then
             echo "Starting Ollama macOS App..."
-            open -a Ollama 2>/dev/null || ollama serve >/dev/null 2>&1 &
+            open -a Ollama 2>/dev/null || "$OLLAMA_EXE" serve >/dev/null 2>&1 &
         else
             # Linux
             echo "Starting Ollama service..."
             if systemctl --user is-failed ollama >/dev/null 2>&1 || systemctl --user is-active ollama >/dev/null 2>&1; then
-                systemctl --user start ollama >/dev/null 2>&1 || ollama serve >/dev/null 2>&1 &
+                systemctl --user start ollama >/dev/null 2>&1 || "$OLLAMA_EXE" serve >/dev/null 2>&1 &
             elif systemctl is-failed ollama >/dev/null 2>&1 || systemctl is-active ollama >/dev/null 2>&1; then
-                sudo systemctl start ollama >/dev/null 2>&1 || ollama serve >/dev/null 2>&1 &
+                sudo systemctl start ollama >/dev/null 2>&1 || "$OLLAMA_EXE" serve >/dev/null 2>&1 &
             else
-                ollama serve >/dev/null 2>&1 &
+                "$OLLAMA_EXE" serve >/dev/null 2>&1 &
             fi
         fi
         echo "Waiting 5 seconds for server startup..."
@@ -417,8 +437,8 @@ setup_ollama_local() {
 
     echo ""
     echo -e "${CYAN}Pulling local model: $MODEL_TAG...${RESET}"
-    echo "Running: ollama pull $MODEL_TAG"
-    ollama pull "$MODEL_TAG"
+    echo "Running: \"$OLLAMA_EXE\" pull $MODEL_TAG"
+    "$OLLAMA_EXE" pull "$MODEL_TAG"
     if [ $? -ne 0 ]; then
         echo ""
         echo -e "${RED}[ERROR] Failed to pull model '$MODEL_TAG'. Please check internet connection.${RESET}"
