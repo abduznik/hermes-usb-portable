@@ -83,6 +83,10 @@ export NPM_CONFIG_PREFIX="$RUNTIME_DIR/node"
 export HOME="$PORTABLE_ROOT/.cache/unix-home"
 mkdir -p "$HOME"
 
+# Portable Ollama isolation - keep all downloaded GGUF models on the USB drive
+export OLLAMA_MODELS="$HERMES_HOME/models"
+
+
 # ---------------------------------------------------------------------------
 # Launch Hermes
 # ---------------------------------------------------------------------------
@@ -336,41 +340,113 @@ setup_online() {
 
 setup_ollama_local() {
     clear
-    OLLAMA_EXE="ollama"
+    OLLAMA_EXE="$HERMES_HOME/bin/ollama"
+    PORTABLE_OLLAMA_EXISTS=1
     if [ "$PLATFORM" = "macos" ]; then
-        if [ -f "/usr/local/bin/ollama" ]; then
-            OLLAMA_EXE="/usr/local/bin/ollama"
-        elif [ -f "/Applications/Ollama.app/Contents/Resources/ollama" ]; then
-            OLLAMA_EXE="/Applications/Ollama.app/Contents/Resources/ollama"
+        OLLAMA_EXE="$HERMES_HOME/bin/Ollama.app/Contents/Resources/ollama"
+    fi
+
+    if [ ! -f "$OLLAMA_EXE" ]; then
+        PORTABLE_OLLAMA_EXISTS=0
+        if [ "$PLATFORM" = "macos" ]; then
+            if [ -f "/usr/local/bin/ollama" ]; then
+                OLLAMA_EXE="/usr/local/bin/ollama"
+            elif [ -f "/Applications/Ollama.app/Contents/Resources/ollama" ]; then
+                OLLAMA_EXE="/Applications/Ollama.app/Contents/Resources/ollama"
+            elif command -v ollama >/dev/null 2>&1; then
+                OLLAMA_EXE="ollama"
+            fi
+        else
+            if command -v ollama >/dev/null 2>&1; then
+                OLLAMA_EXE="ollama"
+            fi
         fi
     fi
 
-    if ! command -v "$OLLAMA_EXE" >/dev/null 2>&1; then
+    if ! command -v "$OLLAMA_EXE" >/dev/null 2>&1 && [ ! -f "$OLLAMA_EXE" ]; then
         echo ""
-        echo -e "${RED}[ERROR] Ollama CLI executable was not found on your system!${RESET}"
-        echo "Please download and install Ollama from: https://ollama.com"
-        echo "or make sure it is added to your environment PATH."
+        echo -e "${YELLOW}[INFO] Local Ollama CLI was not found on your system.${RESET}"
+        echo "We can automatically download and set up a 100% PORTABLE Ollama server"
+        echo "directly inside your USB drive (~170 MB). All GGUF models and data will be"
+        echo "saved on the USB drive, keeping your host computer completely clean!"
         echo ""
-        read -p "Press Enter to continue ..."
-        menu_setup
-        return
+        read -p "$(echo -e "${BRIGHT_YELLOW}Do you want to download portable Ollama now? [y/N]: ${RESET}")" yn
+        case "$yn" in
+            [Yy]* ) ;;
+            * )
+                echo "Setup cancelled. Returning to setup menu."
+                read -p "Press Enter to continue ..."
+                menu_setup
+                return
+                ;;
+        esac
+        
+        echo ""
+        echo -e "${CYAN}Downloading portable Ollama (~170 MB) to USB drive...${RESET}"
+        echo "Please keep this terminal open."
+        echo ""
+        mkdir -p "$HERMES_HOME/bin"
+        
+        if [ "$PLATFORM" = "macos" ]; then
+            echo "Downloading Ollama macOS App ZIP..."
+            curl -L -o "$HERMES_HOME/bin/Ollama-darwin.zip" "https://ollama.com/download/Ollama-darwin.zip"
+            if [ $? -eq 0 ]; then
+                echo "Extracting Ollama.app..."
+                unzip -q -o "$HERMES_HOME/bin/Ollama-darwin.zip" -d "$HERMES_HOME/bin/"
+                rm -f "$HERMES_HOME/bin/Ollama-darwin.zip"
+                OLLAMA_EXE="$HERMES_HOME/bin/Ollama.app/Contents/Resources/ollama"
+                PORTABLE_OLLAMA_EXISTS=1
+            else
+                echo -e "${RED}[ERROR] Download failed. Please check your internet connection.${RESET}"
+                read -p "Press Enter to continue ..."
+                menu_setup
+                return
+            fi
+        else
+            # Linux
+            echo "Downloading Ollama Linux raw binary..."
+            LINUX_ARCH="amd64"
+            if [ "$ARCH" = "arm64" ]; then LINUX_ARCH="arm64"; fi
+            curl -L -o "$HERMES_HOME/bin/ollama" "https://ollama.com/download/ollama-linux-${LINUX_ARCH}"
+            if [ $? -eq 0 ]; then
+                chmod +x "$HERMES_HOME/bin/ollama"
+                OLLAMA_EXE="$HERMES_HOME/bin/ollama"
+                PORTABLE_OLLAMA_EXISTS=1
+            else
+                echo -e "${RED}[ERROR] Download failed. Please check your internet connection.${RESET}"
+                read -p "Press Enter to continue ..."
+                menu_setup
+                return
+            fi
+        fi
+        echo -e "${BRIGHT_GREEN}✓ Portable Ollama successfully installed!${RESET}"
     fi
 
     echo "Checking if local Ollama server is running on port 11434..."
     if ! nc -z 127.0.0.1 11434 2>/dev/null && ! curl -s http://127.0.0.1:11434 >/dev/null; then
         echo -e "${YELLOW}Ollama is not running. Attempting to start local Ollama server...${RESET}"
-        if [ "$PLATFORM" = "macos" ]; then
-            echo "Starting Ollama macOS App..."
-            open -a Ollama 2>/dev/null || "$OLLAMA_EXE" serve >/dev/null 2>&1 &
-        else
-            # Linux
-            echo "Starting Ollama service..."
-            if systemctl --user is-failed ollama >/dev/null 2>&1 || systemctl --user is-active ollama >/dev/null 2>&1; then
-                systemctl --user start ollama >/dev/null 2>&1 || "$OLLAMA_EXE" serve >/dev/null 2>&1 &
-            elif systemctl is-failed ollama >/dev/null 2>&1 || systemctl is-active ollama >/dev/null 2>&1; then
-                sudo systemctl start ollama >/dev/null 2>&1 || "$OLLAMA_EXE" serve >/dev/null 2>&1 &
+        if [ "$PORTABLE_OLLAMA_EXISTS" -eq 1 ]; then
+            if [ "$PLATFORM" = "macos" ]; then
+                echo "Starting portable Ollama App..."
+                open "$HERMES_HOME/bin/Ollama.app" 2>/dev/null || "$OLLAMA_EXE" serve >/dev/null 2>&1 &
             else
+                echo "Starting portable Ollama CLI serve..."
                 "$OLLAMA_EXE" serve >/dev/null 2>&1 &
+            fi
+        else
+            if [ "$PLATFORM" = "macos" ]; then
+                echo "Starting Ollama macOS App..."
+                open -a Ollama 2>/dev/null || "$OLLAMA_EXE" serve >/dev/null 2>&1 &
+            else
+                # Linux
+                echo "Starting Ollama service..."
+                if systemctl --user is-failed ollama >/dev/null 2>&1 || systemctl --user is-active ollama >/dev/null 2>&1; then
+                    systemctl --user start ollama >/dev/null 2>&1 || "$OLLAMA_EXE" serve >/dev/null 2>&1 &
+                elif systemctl is-failed ollama >/dev/null 2>&1 || systemctl is-active ollama >/dev/null 2>&1; then
+                    sudo systemctl start ollama >/dev/null 2>&1 || "$OLLAMA_EXE" serve >/dev/null 2>&1 &
+                else
+                    "$OLLAMA_EXE" serve >/dev/null 2>&1 &
+                fi
             fi
         fi
         echo "Waiting 5 seconds for server startup..."

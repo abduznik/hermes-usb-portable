@@ -57,6 +57,10 @@ REM Prevent Node from writing to host appdata
 set "APPDATA=%PORTABLE_ROOT%\.cache\windows-appdata"
 set "LOCALAPPDATA=%PORTABLE_ROOT%\.cache\windows-localappdata"
 
+REM Portable Ollama isolation - keep all downloaded GGUF models on the USB drive
+set "OLLAMA_MODELS=%HERMES_HOME%\models"
+
+
 REM ---------------------------------------------------------------------------
 REM Launch Hermes
 REM ---------------------------------------------------------------------------
@@ -311,21 +315,58 @@ goto :detect_status
 
 :setup_ollama_local
 echo.
-set "OLLAMA_EXE=ollama"
-if exist "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" (
-    set "OLLAMA_EXE=%LOCALAPPDATA%\Programs\Ollama\ollama.exe"
+set "OLLAMA_EXE=%HERMES_HOME%\bin\ollama\ollama.exe"
+set "PORTABLE_OLLAMA_EXISTS=1"
+if not exist "!OLLAMA_EXE!" (
+    set "PORTABLE_OLLAMA_EXISTS=0"
+    if exist "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" (
+        set "OLLAMA_EXE=%LOCALAPPDATA%\Programs\Ollama\ollama.exe"
+    ) else (
+        where.exe ollama >nul 2>&1
+        if not errorlevel 1 (
+            set "OLLAMA_EXE=ollama"
+        )
+    )
 )
 
 where.exe !OLLAMA_EXE! >nul 2>&1
 if errorlevel 1 (
     if not exist "!OLLAMA_EXE!" (
         echo.
-        echo %RED%[ERROR] Ollama CLI executable was not found on your system!%RESET%
-        echo Please download and install Ollama from: https://ollama.com
-        echo or make sure it is added to your environment PATH.
+        echo %YELLOW%[INFO] Local Ollama CLI was not found on your system.%RESET%
+        echo We can automatically download and set up a 100%% PORTABLE Ollama server
+        echo directly inside your USB drive (~170 MB). All GGUF models and data will be
+        echo saved on the USB drive, keeping your host computer completely clean!
         echo.
-        pause
-        goto :menu_setup
+        echo %BRIGHT_YELLOW%Do you want to download portable Ollama now? [Y, N]%RESET% & choice /C YN /N
+        if errorlevel 2 (
+            echo Setup cancelled. Returning to setup menu.
+            pause
+            goto :menu_setup
+        )
+        
+        echo.
+        echo %CYAN%Downloading portable Ollama Windows ZIP (~170 MB) to USB drive...%RESET%
+        echo Please keep this terminal open.
+        echo.
+        powershell -ExecutionPolicy Bypass -Command ^
+            "Write-Host 'Downloading portable Ollama Windows ZIP...'; ^
+             if (-not (Test-Path '%HERMES_HOME%\bin')) { New-Item -ItemType Directory -Force -Path '%HERMES_HOME%\bin' }; ^
+             Invoke-WebRequest -Uri 'https://ollama.com/download/ollama-windows-amd64.zip' -OutFile '%HERMES_HOME%\bin\ollama-windows-amd64.zip'; ^
+             Write-Host 'Extracting to %HERMES_HOME%\bin\ollama\...'; ^
+             if (-not (Test-Path '%HERMES_HOME%\bin\ollama')) { New-Item -ItemType Directory -Force -Path '%HERMES_HOME%\bin\ollama' }; ^
+             Expand-Archive -Path '%HERMES_HOME%\bin\ollama-windows-amd64.zip' -DestinationPath '%HERMES_HOME%\bin\ollama' -Force; ^
+             Remove-Item -Path '%HERMES_HOME%\bin\ollama-windows-amd64.zip' -Force;"
+             
+        if errorlevel 1 (
+            echo.
+            echo %RED%[ERROR] Download or extraction failed. Please check internet connection.%RESET%
+            pause
+            goto :menu_setup
+        )
+        echo %GREEN%✓ Portable Ollama successfully installed!%RESET%
+        set "OLLAMA_EXE=%HERMES_HOME%\bin\ollama\ollama.exe"
+        set "PORTABLE_OLLAMA_EXISTS=1"
     )
 )
 
@@ -333,12 +374,17 @@ echo Checking if local Ollama server is running on port 11434...
 powershell -Command "try { $t = New-Object System.Net.Sockets.TcpClient('127.0.0.1', 11434); if ($t.Connected) { exit 0 } } catch { exit 1 }" >nul 2>&1
 if errorlevel 1 (
     echo %YELLOW%Ollama is not running. Attempting to start local Ollama server...%RESET%
-    if exist "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe" (
-        echo Starting Ollama application...
-        start "" "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe"
-    ) else (
-        echo Ollama app not found in LocalAppData. Starting via CLI serve...
+    if "!PORTABLE_OLLAMA_EXISTS!"=="1" (
+        echo Starting portable Ollama via CLI serve...
         start /B "ollama-serve" "!OLLAMA_EXE!" serve >nul 2>&1
+    ) else (
+        if exist "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe" (
+            echo Starting Ollama application...
+            start "" "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe"
+        ) else (
+            echo Ollama app not found in LocalAppData. Starting via CLI serve...
+            start /B "ollama-serve" "!OLLAMA_EXE!" serve >nul 2>&1
+        )
     )
     echo Waiting 5 seconds for server startup...
     timeout /t 5 /nobreak >nul
