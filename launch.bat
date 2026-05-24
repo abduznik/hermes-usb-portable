@@ -265,26 +265,25 @@ goto :show_menu
 
 :check_ollama
 set "OLLAMA_OFFLINE=0"
-if exist "%HERMES_HOME%\config.yaml" (
-    findstr /C:"base_url: http://127.0.0.1:11434" "%HERMES_HOME%\config.yaml" >nul 2>&1
-    if not errorlevel 1 (
-        echo Checking if local Ollama server is running on port 11434...
-        powershell -Command "try { $t = New-Object System.Net.Sockets.TcpClient('127.0.0.1', 11434); if ($t.Connected) { exit 0 } } catch { exit 1 }" >nul 2>&1
-        if errorlevel 1 (
-            set "OLLAMA_OFFLINE=1"
-        )
-    )
-)
-if "!OLLAMA_OFFLINE!"=="1" (
-    echo %YELLOW%[WARN] Local Ollama server is not running on port 11434!%RESET%
-    echo Please make sure Ollama is started on the host system,
-    echo and that you have pulled the model by running:
-    echo   ollama pull qwen2.5-coder:1.5b
-    echo.
-    echo %BRIGHT_YELLOW%Do you want to continue anyway? [Y, N]%RESET% & choice /C YN /N
-    if errorlevel 2 (
-        exit /b 1
-    )
+if not exist "%HERMES_HOME%\config.yaml" exit /b 0
+
+findstr /C:"base_url: http://127.0.0.1:11434" "%HERMES_HOME%\config.yaml" >nul 2>&1
+if errorlevel 1 exit /b 0
+
+echo Checking if local Ollama server is running on port 11434...
+powershell -Command "try { $t = New-Object System.Net.Sockets.TcpClient('127.0.0.1', 11434); if ($t.Connected) { exit 0 } } catch { exit 1 }" >nul 2>&1
+if not errorlevel 1 exit /b 0
+
+set "OLLAMA_OFFLINE=1"
+echo %YELLOW%[WARN] Local Ollama server is not running on port 11434!%RESET%
+echo Please make sure Ollama is started on the host system,
+echo and that you have pulled the model by running:
+echo   ollama pull qwen2.5-coder:1.5b
+echo.
+set "CONFIRM="
+set /p "CONFIRM=Do you want to continue anyway? [y/N]: "
+if /I not "!CONFIRM!"=="y" (
+    exit /b 1
 )
 exit /b 0
 
@@ -329,78 +328,82 @@ if not exist "!OLLAMA_EXE!" (
     )
 )
 
-where.exe !OLLAMA_EXE! >nul 2>&1
-if errorlevel 1 (
-    if not exist "!OLLAMA_EXE!" (
-        echo.
-        echo %YELLOW%[INFO] Local Ollama CLI was not found on your system.%RESET%
-        echo We can automatically download and set up a 100%% PORTABLE Ollama server
-        echo directly inside your USB drive (~170 MB). All GGUF models and data will be
-        echo saved on the USB drive, keeping your host computer completely clean!
-        echo.
-        echo %BRIGHT_YELLOW%Do you want to download portable Ollama now? [Y, N]%RESET% & choice /C YN /N
-        if errorlevel 2 (
-            echo Setup cancelled. Returning to setup menu.
-            pause
-            goto :menu_setup
-        )
-        
-        echo.
-        echo %CYAN%Downloading portable Ollama Windows ZIP (~170 MB) to USB drive...%RESET%
-        echo Please keep this terminal open.
-        echo.
-        powershell -ExecutionPolicy Bypass -Command ^
-            "Write-Host 'Downloading portable Ollama Windows ZIP...'; ^
-             if (-not (Test-Path '%HERMES_HOME%\bin')) { New-Item -ItemType Directory -Force -Path '%HERMES_HOME%\bin' }; ^
-             Invoke-WebRequest -Uri 'https://ollama.com/download/ollama-windows-amd64.zip' -OutFile '%HERMES_HOME%\bin\ollama-windows-amd64.zip'; ^
-             Write-Host 'Extracting to %HERMES_HOME%\bin\ollama\...'; ^
-             if (-not (Test-Path '%HERMES_HOME%\bin\ollama')) { New-Item -ItemType Directory -Force -Path '%HERMES_HOME%\bin\ollama' }; ^
-             Expand-Archive -Path '%HERMES_HOME%\bin\ollama-windows-amd64.zip' -DestinationPath '%HERMES_HOME%\bin\ollama' -Force; ^
-             Remove-Item -Path '%HERMES_HOME%\bin\ollama-windows-amd64.zip' -Force;"
-             
-        if errorlevel 1 (
-            echo.
-            echo %RED%[ERROR] Download or extraction failed. Please check internet connection.%RESET%
-            pause
-            goto :menu_setup
-        )
-        echo %GREEN%✓ Portable Ollama successfully installed!%RESET%
-        set "OLLAMA_EXE=%HERMES_HOME%\bin\ollama\ollama.exe"
-        set "PORTABLE_OLLAMA_EXISTS=1"
-    )
+:: Check if Ollama executable actually exists or is accessible
+if exist "!OLLAMA_EXE!" goto :ollama_executable_ready
+where.exe "!OLLAMA_EXE!" >nul 2>&1
+if not errorlevel 1 goto :ollama_executable_ready
+
+:: Download portable Ollama if not found
+echo.
+echo %YELLOW%[INFO] Local Ollama CLI was not found on your system.%RESET%
+echo We can automatically download and set up a 100%% PORTABLE Ollama server
+echo directly inside your USB drive (~170 MB). All GGUF models and data will be
+echo saved on the USB drive, keeping your host computer completely clean!
+echo.
+set "CONFIRM="
+set /p "CONFIRM=Do you want to download portable Ollama now? [y/N]: "
+if /I not "!CONFIRM!"=="y" (
+    echo Setup cancelled. Returning to setup menu.
+    pause
+    goto :menu_setup
 )
+
+powershell -ExecutionPolicy Bypass -File "%PORTABLE_ROOT%\scripts\download_helper.ps1" -Url "https://ollama.com/download/ollama-windows-amd64.zip" -OutFile "%HERMES_HOME%\bin\ollama-windows-amd64.zip" -ExtractDir "%HERMES_HOME%\bin\ollama"
+     
+if errorlevel 1 (
+    echo.
+    echo %RED%[ERROR] Download or extraction failed. Please check internet connection.%RESET%
+    pause
+    goto :menu_setup
+)
+
+if not exist "%HERMES_HOME%\bin\ollama\ollama.exe" (
+    echo.
+    echo %RED%[ERROR] Portable Ollama executable was not found. Download or extraction failed.%RESET%
+    pause
+    goto :menu_setup
+)
+
+echo %GREEN%✓ Portable Ollama successfully installed!%RESET%
+set "OLLAMA_EXE=%HERMES_HOME%\bin\ollama\ollama.exe"
+set "PORTABLE_OLLAMA_EXISTS=1"
+
+:ollama_executable_ready
 
 echo Checking if local Ollama server is running on port 11434...
 powershell -Command "try { $t = New-Object System.Net.Sockets.TcpClient('127.0.0.1', 11434); if ($t.Connected) { exit 0 } } catch { exit 1 }" >nul 2>&1
-if errorlevel 1 (
-    echo %YELLOW%Ollama is not running. Attempting to start local Ollama server...%RESET%
-    if "!PORTABLE_OLLAMA_EXISTS!"=="1" (
-        echo Starting portable Ollama via CLI serve...
-        start /B "ollama-serve" "!OLLAMA_EXE!" serve >nul 2>&1
-    ) else (
-        if exist "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe" (
-            echo Starting Ollama application...
-            start "" "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe"
-        ) else (
-            echo Ollama app not found in LocalAppData. Starting via CLI serve...
-            start /B "ollama-serve" "!OLLAMA_EXE!" serve >nul 2>&1
-        )
-    )
-    echo Waiting 5 seconds for server startup...
-    timeout /t 5 /nobreak >nul
-    
-    powershell -Command "try { $t = New-Object System.Net.Sockets.TcpClient('127.0.0.1', 11434); if ($t.Connected) { exit 0 } } catch { exit 1 }" >nul 2>&1
-    if errorlevel 1 (
-        echo.
-        echo %RED%[ERROR] Could not start or connect to Ollama server. Please verify it is installed and running.%RESET%
-        pause
-        goto :menu_setup
-    ) else (
-        echo %GREEN%✓ Ollama server successfully started!%RESET%
-    )
+if not errorlevel 1 goto :ollama_running
+
+echo %YELLOW%Ollama is not running. Attempting to start local Ollama server...%RESET%
+if "!PORTABLE_OLLAMA_EXISTS!"=="1" (
+    echo Starting portable Ollama via CLI serve...
+    start /B "ollama-serve" "!OLLAMA_EXE!" serve >nul 2>&1
 ) else (
-    echo %GREEN%✓ Local Ollama server is already running!%RESET%
+    if exist "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe" (
+        echo Starting Ollama application...
+        start "" "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe"
+    ) else (
+        echo Ollama app not found in LocalAppData. Starting via CLI serve...
+        start /B "ollama-serve" "!OLLAMA_EXE!" serve >nul 2>&1
+    )
 )
+echo Waiting 5 seconds for server startup...
+timeout /t 5 /nobreak >nul
+
+powershell -Command "try { $t = New-Object System.Net.Sockets.TcpClient('127.0.0.1', 11434); if ($t.Connected) { exit 0 } } catch { exit 1 }" >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo %RED%[ERROR] Could not start or connect to Ollama server. Please verify it is installed and running.%RESET%
+    pause
+    goto :menu_setup
+)
+echo %GREEN%✓ Ollama server successfully started!%RESET%
+goto :ollama_running_check_done
+
+:ollama_running
+echo %GREEN%✓ Local Ollama server is already running!%RESET%
+
+:ollama_running_check_done
 
 set "RECS="
 for /f "delims=" %%i in ('python scripts/detect_system.py --recommend-tags') do set "RECS=%%i"
@@ -487,40 +490,47 @@ set "DOWNLOAD_REQUIRED=0"
 if not exist "!LLAMAFILE_EXE!" set "DOWNLOAD_REQUIRED=1"
 if not exist "!MODEL_FILE!" set "DOWNLOAD_REQUIRED=1"
 
-if "!DOWNLOAD_REQUIRED!"=="1" (
-    echo %YELLOW%[INFO] Local model assets are missing from the USB drive.%RESET%
-    echo This setup requires downloading:
-    echo  - Llamafile runner (~35 MB)
-    echo  - Qwen2.5-Coder-1.5B model (~1.0 GB)
-    echo.
-    echo %BRIGHT_YELLOW%Do you want to download these files now? [Y, N]%RESET% & choice /C YN /N
-    if errorlevel 2 (
-        echo Setup cancelled. Returning to setup menu.
-        pause
-        goto :menu_setup
-    )
-    
-    echo.
-    echo %CYAN%Downloading local AI assets to USB drive...%RESET%
-    echo Please keep this terminal open.
-    echo.
-    powershell -ExecutionPolicy Bypass -Command ^
-        "Write-Host 'Downloading llamafile-0.10.1 ...'; ^
-         if (-not (Test-Path '%HERMES_HOME%\bin')) { New-Item -ItemType Directory -Force -Path '%HERMES_HOME%\bin' }; ^
-         Invoke-WebRequest -Uri 'https://github.com/mozilla-ai/llamafile/releases/download/0.10.1/llamafile-0.10.1' -OutFile '!LLAMAFILE_EXE!'; ^
-         Write-Host 'Downloading Qwen2.5-Coder-1.5B-Instruct-Q4_K_M GGUF ...'; ^
-         if (-not (Test-Path '%HERMES_HOME%\models')) { New-Item -ItemType Directory -Force -Path '%HERMES_HOME%\models' }; ^
-         Invoke-WebRequest -Uri 'https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf' -OutFile '!MODEL_FILE!';"
-         
-    if errorlevel 1 (
-        echo.
-        echo %RED%[ERROR] Download failed. Please check your internet connection.%RESET%
-        pause
-        goto :menu_setup
-    )
-    echo %GREEN%✓ Download completed successfully!%RESET%
+if not "!DOWNLOAD_REQUIRED!"=="1" goto :usb_local_config_only
+
+echo %YELLOW%[INFO] Local model assets are missing from the USB drive.%RESET%
+echo This setup requires downloading:
+echo  - Llamafile runner (~35 MB)
+echo  - Qwen2.5-Coder-1.5B model (~1.0 GB)
+echo.
+set "CONFIRM="
+set /p "CONFIRM=Do you want to download these files now? [y/N]: "
+if /I not "!CONFIRM!"=="y" (
+    echo Setup cancelled. Returning to setup menu.
+    pause
+    goto :menu_setup
 )
 
+powershell -ExecutionPolicy Bypass -File "%PORTABLE_ROOT%\scripts\download_helper.ps1" -Url "https://github.com/mozilla-ai/llamafile/releases/download/0.10.1/llamafile-0.10.1" -OutFile "!LLAMAFILE_EXE!"
+powershell -ExecutionPolicy Bypass -File "%PORTABLE_ROOT%\scripts\download_helper.ps1" -Url "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf" -OutFile "!MODEL_FILE!"
+     
+if errorlevel 1 (
+    echo.
+    echo %RED%[ERROR] Download failed. Please check your internet connection.%RESET%
+    pause
+    goto :menu_setup
+)
+
+if not exist "!LLAMAFILE_EXE!" (
+    echo.
+    echo %RED%[ERROR] Llamafile executable was not found. Download failed.%RESET%
+    pause
+    goto :menu_setup
+)
+if not exist "!MODEL_FILE!" (
+    echo.
+    echo %RED%[ERROR] Model GGUF file was not found. Download failed.%RESET%
+    pause
+    goto :menu_setup
+)
+
+echo %GREEN%✓ Download completed successfully!%RESET%
+
+:usb_local_config_only
 echo.
 echo %CYAN%Configuring Hermes to use local USB model...%RESET%
 hermes config set model.provider custom

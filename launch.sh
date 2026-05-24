@@ -426,13 +426,8 @@ setup_ollama_local() {
     if ! nc -z 127.0.0.1 11434 2>/dev/null && ! curl -s http://127.0.0.1:11434 >/dev/null; then
         echo -e "${YELLOW}Ollama is not running. Attempting to start local Ollama server...${RESET}"
         if [ "$PORTABLE_OLLAMA_EXISTS" -eq 1 ]; then
-            if [ "$PLATFORM" = "macos" ]; then
-                echo "Starting portable Ollama App..."
-                open "$HERMES_HOME/bin/Ollama.app" 2>/dev/null || "$OLLAMA_EXE" serve >/dev/null 2>&1 &
-            else
-                echo "Starting portable Ollama CLI serve..."
-                "$OLLAMA_EXE" serve >/dev/null 2>&1 &
-            fi
+            echo "Starting portable Ollama CLI serve..."
+            "$OLLAMA_EXE" serve >/dev/null 2>&1 &
         else
             if [ "$PLATFORM" = "macos" ]; then
                 echo "Starting Ollama macOS App..."
