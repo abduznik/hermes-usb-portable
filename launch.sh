@@ -74,12 +74,11 @@ fi
 if [ -f "$RUNTIME_DIR/venv.path" ]; then
     VIRTUAL_ENV="$(cat "$RUNTIME_DIR/venv.path")"
 else
-    # Fallback for older setups that put the venv on the drive.
     VIRTUAL_ENV="$RUNTIME_DIR/venv"
 fi
 
-# If the venv is missing (e.g. after a reboot purged $TMPDIR), rebuild it.
-if [ ! -x "$VIRTUAL_ENV/bin/python" ]; then
+# If the venv is missing or was never populated with hermes, rebuild it.
+if [ ! -x "$VIRTUAL_ENV/bin/python" ] || [ ! -x "$VIRTUAL_ENV/bin/hermes" ]; then
     echo ""
     echo "[INFO] Local venv not found (temp was likely cleared). Rebuilding ..."
     echo "       This is fast because packages are cached on the drive."
@@ -102,18 +101,29 @@ if [ ! -x "$VIRTUAL_ENV/bin/python" ]; then
     echo "$VIRTUAL_ENV" > "$RUNTIME_DIR/venv.path"
 
     rm -rf "$VIRTUAL_ENV"
-    if ! "$UV_EXE" venv "$VIRTUAL_ENV" --python "$PYTHON_EXE" --seed 2>/dev/null; then
+    if ! "$UV_EXE" venv "$VIRTUAL_ENV" --python "$PYTHON_EXE" --seed 2>&1; then
+        echo "[WARN]  uv venv --seed failed — retrying without --seed ..."
         "$UV_EXE" venv "$VIRTUAL_ENV" --python "$PYTHON_EXE"
     fi
-    if ! "$UV_EXE" pip install --python "$VIRTUAL_ENV/bin/python" --link-mode=copy \
-        -e "$SRC_DIR/hermes-agent[all]" \
-        "python-telegram-bot[webhooks]==22.6" 2>/dev/null; then
-        "$VIRTUAL_ENV/bin/python" -m ensurepip --upgrade >/dev/null 2>&1 || true
-        "$VIRTUAL_ENV/bin/python" -m pip install \
+    if [ ! -x "$VIRTUAL_ENV/bin/hermes" ]; then
+        if ! "$UV_EXE" pip install --python "$VIRTUAL_ENV/bin/python" --link-mode=copy \
             -e "$SRC_DIR/hermes-agent[all]" \
-            "python-telegram-bot[webhooks]==22.6" 2>/dev/null || true
+            "python-telegram-bot[webhooks]==22.6" 2>&1; then
+            echo "[WARN]  uv pip install failed — falling back to pip ..."
+            "$VIRTUAL_ENV/bin/python" -m ensurepip --upgrade >/dev/null 2>&1 || true
+            "$VIRTUAL_ENV/bin/python" -m pip install \
+                -e "$SRC_DIR/hermes-agent[all]" \
+                "python-telegram-bot[webhooks]==22.6" 2>&1 || true
+        fi
+    else
+        echo "       Hermes already installed — skipping."
     fi
-    echo "[OK]    Venv rebuilt."
+
+    if [ -x "$VIRTUAL_ENV/bin/hermes" ]; then
+        echo "[OK]    Venv rebuilt."
+    else
+        echo "[ERROR] Venv rebuild failed — hermes entry point not found."
+    fi
 fi
 
 export HERMES_HOME="$HERMES_HOME"
