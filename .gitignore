@@ -4,3 +4,14 @@ data/
 src/
 *.flag
 *.log
+
+# Personal credentials and secrets
+.env
+.ssh/
+scripts/backup_key
+scripts/backup_key.pub
+scripts/backup.sh
+
+# macOS resource fork junk
+._*
+.DS_Store
