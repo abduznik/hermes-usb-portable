@@ -257,9 +257,9 @@ Write-Host "        This may take 3-10 minutes depending on your connection."
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
 
 # Try uv first (faster), fall back to pip on unsupported filesystem (e.g. ExFAT)
-$uvResult = & $uvExe pip install --python $venvPython --link-mode=copy -e "$destSrc[all]" 2>&1
+& $uvExe pip install --python $venvPython --link-mode=copy -e "$destSrc[all]"
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "        uv install failed — falling back to pip ..."
+    Write-Host "        uv install failed - falling back to pip ..."
     & $venvPython -m ensurepip --upgrade | Out-Null
     & $venvPython -m pip install -e "$destSrc[all]"
     if ($LASTEXITCODE -ne 0) { throw "Failed to install Hermes dependencies" }
@@ -275,9 +275,9 @@ Write-Done "Dependencies installed"
 # so Telegram works out of the box.
 # ---------------------------------------------------------------------------
 Write-Step "Installing messaging dependencies (Telegram) ..."
-$tgResult = & $uvExe pip install --python $venvPython --link-mode=copy "python-telegram-bot[webhooks]==22.6" 2>&1
+& $uvExe pip install --python $venvPython --link-mode=copy "python-telegram-bot[webhooks]==22.6"
 if ($LASTEXITCODE -ne 0) {
-    & $venvPython -m pip install "python-telegram-bot[webhooks]==22.6" 2>&1 | Out-Null
+    & $venvPython -m pip install "python-telegram-bot[webhooks]==22.6" 2>$null | Out-Null
     if ($LASTEXITCODE -eq 0) {
         Write-Done "python-telegram-bot ready"
     } else {
